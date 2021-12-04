@@ -14,7 +14,8 @@ pagetable_t kernel_pagetable;
 extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
-
+void freewalk_print(pagetable_t pagetable,int index);
+extern void KernelPageGenforProc(struct proc *p);
 /*
  * create a direct-map page table for the kernel.
  */
@@ -75,17 +76,17 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
     panic("walk");
 
   for(int level = 2; level > 0; level--) {
-    pte_t *pte = &pagetable[PX(level, va)];
+    pte_t *pte = &pagetable[PX(level, va)];// get the pte of the pagetable
     if(*pte & PTE_V) {
-      pagetable = (pagetable_t)PTE2PA(*pte);
+      pagetable = (pagetable_t)PTE2PA(*pte);// level 2 phy addr.level 1 phy addr, level 0 phy addr
     } else {
       if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
         return 0;
       memset(pagetable, 0, PGSIZE);
-      *pte = PA2PTE(pagetable) | PTE_V;
+      *pte = PA2PTE(pagetable) | PTE_V;// set pte_V valid
     }
   }
-  return &pagetable[PX(0, va)];
+  return &pagetable[PX(0, va)];// the bottom level pte
 }
 
 // Look up a virtual address, return the physical address,
@@ -150,8 +151,8 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 {
   uint64 a, last;
   pte_t *pte;
-
-  a = PGROUNDDOWN(va);
+  printf("mappages:va:%p,size:%d\n",va,size);
+  a = PGROUNDDOWN(va);// mask low 12 bits which indicate offset
   last = PGROUNDDOWN(va + size - 1);
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
@@ -275,7 +276,8 @@ void
 freewalk(pagetable_t pagetable)
 {
   // there are 2^9 = 512 PTEs in a page table.
-  for(int i = 0; i < 512; i++){
+  for(int i = 0; i < 512; i++)
+  {
     pte_t pte = pagetable[i];
     if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
       // this PTE points to a lower-level page table.
@@ -361,7 +363,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
-    n = PGSIZE - (dstva - va0);
+    n = PGSIZE - (dstva - va0);//make page table align
     if(n > len)
       n = len;
     memmove((void *)(pa0 + (dstva - va0)), src, n);
@@ -439,4 +441,34 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+char* formtp[3] = {"..",".. ..",".. .. .."};
+void vmprint(pagetable_t pageTable)
+{
+  printf("page table %p\n",pageTable);
+  freewalk_print(pageTable,0);
+}
+void freewalk_print(pagetable_t pagetable,int index)
+{
+  static int index_input = 0;
+  index_input = index;
+  for(int i =0; i<512; i++)
+  {
+    pte_t pte = pagetable[i];
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0)
+    {
+      uint64 child = PTE2PA(pte);
+      printf("%s%d:pte %p pa %p\n",formtp[index_input],i,pte,child);
+      index_input ++;
+      freewalk_print((pagetable_t)child,index_input);
+      //pagetable[i] = 0;
+    }
+    index_input = index;
+  }
+}
+void uvmfree_kernelpage(pagetable_t pagetable,uint64 sz)
+{
+  if(sz > 0)
+    uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1);
+  freewalk(pagetable);
 }

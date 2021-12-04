@@ -19,6 +19,7 @@ extern int devintr();
 void
 trapinit(void)
 {
+  printf("trapinit\n");
   initlock(&tickslock, "time");
 }
 

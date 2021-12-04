@@ -20,13 +20,15 @@ static void wakeup1(struct proc *chan);
 static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
-
+void KernelPageGenforProc(struct proc *p);
+void proc_freeKernelpagetable(uint64 sz,struct proc *p);
+extern pagetable_t kernel_pagetable;
 // initialize the proc table at boot time.
 void
 procinit(void)
 {
   struct proc *p;
-  
+  printf("procinit\n");
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
@@ -108,7 +110,8 @@ found:
   p->pid = allocpid();
 
   // Allocate a trapframe page.
-  if((p->trapframe = (struct trapframe *)kalloc()) == 0){
+  if((p->trapframe = (struct trapframe *)kalloc()) == 0)
+  {
     release(&p->lock);
     return 0;
   }
@@ -126,7 +129,8 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
-
+  printf("allocproc-->p->kstack:%p\n",p->kstack);
+  KernelPageGenforProc(p);
   return p;
 }
 
@@ -141,6 +145,11 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  if(p->proc_kernelPagetable)
+  {
+    proc_freeKernelpagetable(1,p);/*free kernel pagetable not free leaf physical memory pages*/
+  }
+  p->proc_kernelPagetable = 0;
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -212,7 +221,7 @@ void
 userinit(void)
 {
   struct proc *p;
-
+  printf("userinit\n");
   p = allocproc();
   initproc = p;
   
@@ -273,6 +282,7 @@ fork(void)
     release(&np->lock);
     return -1;
   }
+  //np->traceMask = p->traceMask;// copy trace mask
   np->sz = p->sz;
 
   np->parent = p;
@@ -465,7 +475,9 @@ scheduler(void)
     intr_on();
     
     int found = 0;
-    for(p = proc; p < &proc[NPROC]; p++) {
+    for(p = proc; p < &proc[NPROC]; p++) 
+    {
+
       acquire(&p->lock);
       if(p->state == RUNNABLE) {
         // Switch to chosen process.  It is the process's job
@@ -478,7 +490,12 @@ scheduler(void)
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
-
+                /*load core's satp registers*/
+        printf("before w_satp:process kernel page table:%p\n",p->proc_kernelPagetable);
+        //printf("before w_satp:kernel_pagetable:%p\n",kernel_pagetable);
+        w_satp(MAKE_SATP(p->proc_kernelPagetable));
+        sfence_vma();
+        printf("after w_satp:kernel_pagetable:%p\n",kernel_pagetable);
         found = 1;
       }
       release(&p->lock);
@@ -696,4 +713,30 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+void KernelPageGenforProc(struct proc *p)
+{
+  /*为新进程分配物理页，起始地址为物理地址*/
+  //char *pa;
+  uint64 va;
+  uint64 pa = 0;
+  p->proc_kernelPagetable = (pagetable_t)kalloc();
+  //p->proc_kernelPagetable = kernel_pagetable;
+  memset(p->proc_kernelPagetable, 0, PGSIZE);
+  /*找到进程内核栈的虚拟地址*/
+  va = p->kstack;
+ /*找到进程栈虚拟地址对应的物理地址*/
+  //va = PGROUNDDOWN(va);
+  printf("KernelPageGenforProc-->kernel_pagetable:%p,proc Id:%d,proc va:%p\n",p->proc_kernelPagetable,p->pid,p->kstack);
+  pa = walkaddr(kernel_pagetable,va);
+  /*映射到自己的内核也表*/
+  //printf("after walkaddr va=%p\n",va);
+  mappages(p->proc_kernelPagetable,va,PGSIZE,pa,PTE_R | PTE_W); 
+  //printf("after mappages va=%p\n",va);
+}
+
+void proc_freeKernelpagetable(uint64 sz,struct proc *p)
+{
+  uvmunmap(p->proc_kernelPagetable, p->kstack, 1, 0);
+  //uvmfree(pagetable, sz);
 }
