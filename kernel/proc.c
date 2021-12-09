@@ -23,6 +23,10 @@ extern char trampoline[]; // trampoline.S
 void KernelPageGenforProc(struct proc *p);
 void proc_freeKernelpagetable(uint64 sz,struct proc *p);
 extern pagetable_t kernel_pagetable;
+pagetable_t proc_allocPgtblforProc(void);
+extern char etext[];  // kernel.ld sets this to end of kernel code.
+void user_inithart(struct proc *p);
+void user_vmmap(pagetable_t pagetable,uint64 va, uint64 pa, uint64 sz, int perm);
 // initialize the proc table at boot time.
 void
 procinit(void)
@@ -31,19 +35,19 @@ procinit(void)
   printf("procinit\n");
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
-      initlock(&p->lock, "proc");
+       initlock(&p->lock, "proc");
 
       // Allocate a page for the process's kernel stack.
       // Map it high in memory, followed by an invalid
       // guard page.
-      char *pa = kalloc();
-      if(pa == 0)
-        panic("kalloc");
-      uint64 va = KSTACK((int) (p - proc));
-      kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-      p->kstack = va;
+      // char *pa = kalloc();
+      // if(pa == 0)
+      //   panic("kalloc");
+      // uint64 va = KSTACK((int) (p - proc));
+      // kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);  
+      // p->kstack = va;
   }
-  kvminithart();
+  kvminithart(); 
 }
 
 // Must be called with interrupts disabled,
@@ -91,13 +95,12 @@ allocpid() {
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
 // If there are no free procs, or a memory allocation fails, return 0.
-static struct proc*
-allocproc(void)
+struct proc *allocproc(void)
 {
   struct proc *p;
 
   for(p = proc; p < &proc[NPROC]; p++) {
-    acquire(&p->lock);
+    acquire(&p->lock);     
     if(p->state == UNUSED) {
       goto found;
     } else {
@@ -117,20 +120,41 @@ found:
   }
 
   // An empty user page table.
-  p->pagetable = proc_pagetable(p);
-  if(p->pagetable == 0){
+  
+  p->proc_kernelPagetable =  proc_allocPgtblforProc();
+  if(p->proc_kernelPagetable == 0)
+  {
     freeproc(p);
     release(&p->lock);
     return 0;
   }
+  p->pagetable = proc_pagetable(p);
+  //printf("pid:%d,p->pagetable:%p\n",p->pid,p->pagetable);
+  if(p->pagetable == 0)
+  {
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  
+  }
+  /*KernelPageGenforProc(p);*/
+  char *pa = kalloc();
+  if(pa == 0)
+  {
+    panic("kalloc");
+  }
+  uint64 va = KSTACK((int) (p - proc));
+  user_vmmap(p->proc_kernelPagetable,va,(uint64)pa,PGSIZE,PTE_R | PTE_W); 
+  p->kstack = va;
+  
+  //vmprint(p->proc_kernelPagetable);
 
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
-  printf("allocproc-->p->kstack:%p\n",p->kstack);
-  KernelPageGenforProc(p);
+  //printf("allocproc-->p->kstack:%p,p->kernel_pagetable:%p\n",p->kstack,p->proc_kernelPagetable);
   return p;
 }
 
@@ -145,10 +169,24 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  // if(p->proc_kernelPagetable)
+  // {
+  //   proc_freeKernelpagetable(1,p);/*free kernel pagetable not free leaf physical memory pages*/
+  // }
+  if(p->kstack)
+  {
+    pte_t* pte=walk(p->proc_kernelPagetable,p->kstack,0);
+    if(pte == 0)
+    {
+      panic("freeproc:walk\n");
+    }
+    kfree((void*)PTE2PA(*pte));
+  }
   if(p->proc_kernelPagetable)
   {
-    proc_freeKernelpagetable(1,p);/*free kernel pagetable not free leaf physical memory pages*/
+    proc_freewalk(p->proc_kernelPagetable);
   }
+  p->kstack = 0;
   p->proc_kernelPagetable = 0;
   p->pagetable = 0;
   p->sz = 0;
@@ -167,7 +205,7 @@ pagetable_t
 proc_pagetable(struct proc *p)
 {
   pagetable_t pagetable;
-
+  //printf("function:proc_pagetable\n");
   // An empty page table.
   pagetable = uvmcreate();
   if(pagetable == 0)
@@ -468,7 +506,7 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
-  
+  //printf("function:scheduler:cpuId:%d\n",cpuid());
   c->proc = 0;
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
@@ -477,25 +515,25 @@ scheduler(void)
     int found = 0;
     for(p = proc; p < &proc[NPROC]; p++) 
     {
-
+      //printf("scheduler:pid:%dkernel pagetable:%p\n",p->pid,p->proc_kernelPagetable);
       acquire(&p->lock);
-      if(p->state == RUNNABLE) {
+      if(p->state == RUNNABLE) 
+      {
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        /*load core's satp registers*/
+        //printf("w_satp kernel pagetable:%p\n",p->proc_kernelPagetable);
+        w_satp(MAKE_SATP(p->proc_kernelPagetable));
+        sfence_vma();
+        //printf("scheduler after sfence_vma\n");
         swtch(&c->context, &p->context);
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
-                /*load core's satp registers*/
-        printf("before w_satp:process kernel page table:%p\n",p->proc_kernelPagetable);
-        //printf("before w_satp:kernel_pagetable:%p\n",kernel_pagetable);
-        w_satp(MAKE_SATP(p->proc_kernelPagetable));
-        sfence_vma();
-        printf("after w_satp:kernel_pagetable:%p\n",kernel_pagetable);
         found = 1;
       }
       release(&p->lock);
@@ -503,6 +541,8 @@ scheduler(void)
 #if !defined (LAB_FS)
     if(found == 0) {
       intr_on();
+      /*switch back to kernel page table*/
+      kvminithart();
       asm volatile("wfi");
     }
 #else
@@ -719,24 +759,75 @@ void KernelPageGenforProc(struct proc *p)
   /*为新进程分配物理页，起始地址为物理地址*/
   //char *pa;
   uint64 va;
-  uint64 pa = 0;
-  p->proc_kernelPagetable = (pagetable_t)kalloc();
-  //p->proc_kernelPagetable = kernel_pagetable;
-  memset(p->proc_kernelPagetable, 0, PGSIZE);
+  char *pa = kalloc();
+  if(pa == 0)
+  {
+    panic("kalloc");
+  }
+  // p->proc_kernelPagetable = (pagetable_t)kalloc();
+  // memset(p->proc_kernelPagetable, 0, PGSIZE);
   /*找到进程内核栈的虚拟地址*/
-  va = p->kstack;
+  //va = MAXVA-4*PGSIZE;
+  va = KSTACK((int) (p - proc));
  /*找到进程栈虚拟地址对应的物理地址*/
   //va = PGROUNDDOWN(va);
-  printf("KernelPageGenforProc-->kernel_pagetable:%p,proc Id:%d,proc va:%p\n",p->proc_kernelPagetable,p->pid,p->kstack);
-  pa = walkaddr(kernel_pagetable,va);
+  printf("KernelPageGenforProc-->kernel_pagetable:%p,proc Id:%d,proc va:%p\n",p->proc_kernelPagetable,p->pid,va);
+  //pa = walkaddr(kernel_pagetable,va);
   /*映射到自己的内核也表*/
   //printf("after walkaddr va=%p\n",va);
-  mappages(p->proc_kernelPagetable,va,PGSIZE,pa,PTE_R | PTE_W); 
+  user_vmmap(p->proc_kernelPagetable,va,(uint64)pa,PGSIZE,PTE_R | PTE_W); 
   //printf("after mappages va=%p\n",va);
+  p->kstack = va;
 }
 
 void proc_freeKernelpagetable(uint64 sz,struct proc *p)
 {
   uvmunmap(p->proc_kernelPagetable, p->kstack, 1, 0);
   //uvmfree(pagetable, sz);
+}
+
+pagetable_t proc_allocPgtblforProc()
+{
+    pagetable_t proc_kernelPagetable;
+    proc_kernelPagetable = (pagetable_t)kalloc();
+    //printf("proc_kernelPagetable:%p\n",proc_kernelPagetable);
+    if(proc_kernelPagetable == 0)
+    {
+      panic("proc_kernelPagetable");
+    }
+    memset(proc_kernelPagetable, 0, PGSIZE);
+      // uart registers
+    user_vmmap(proc_kernelPagetable,UART0, UART0, PGSIZE, PTE_R | PTE_W);
+
+    // virtio mmio disk interface
+    user_vmmap(proc_kernelPagetable,VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+
+    // CLINT
+    user_vmmap(proc_kernelPagetable,CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+
+    // PLIC
+    user_vmmap(proc_kernelPagetable,PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+
+    // map kernel text executable and read-only.
+    user_vmmap(proc_kernelPagetable,KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+
+    // map kernel data and the physical RAM we'll make use of.
+    user_vmmap(proc_kernelPagetable,(uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+
+    // map the trampoline for trap entry/exit to
+    // the highest virtual address in the kernel.
+    user_vmmap(proc_kernelPagetable,TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+    return proc_kernelPagetable;
+}
+void user_vmmap(pagetable_t pagetable,uint64 va, uint64 pa, uint64 sz, int perm)
+{
+  //printf("function:user_vmmap\n");
+  if(mappages(pagetable,va,sz,pa,perm) != 0)//此处如果sz填写不对即外设映射不正确，w_satp会执行不成功
+    panic("user_vmmap");
+}
+void user_inithart(struct proc *p)
+{
+      /*load core's satp registers*/
+    w_satp(MAKE_SATP(p->proc_kernelPagetable));
+    sfence_vma();
 }

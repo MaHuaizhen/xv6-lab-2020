@@ -5,7 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
-
+#include "spinlock.h"
+#include "proc.h"
 /*
  * the kernel's page table.
  */
@@ -19,12 +20,13 @@ extern void KernelPageGenforProc(struct proc *p);
 /*
  * create a direct-map page table for the kernel.
  */
+
 void
 kvminit()
 {
+
   kernel_pagetable = (pagetable_t) kalloc();
   memset(kernel_pagetable, 0, PGSIZE);
-
   // uart registers
   kvmmap(UART0, UART0, PGSIZE, PTE_R | PTE_W);
 
@@ -72,6 +74,7 @@ kvminithart()
 pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
+  //printf("function:walk\n");
   if(va >= MAXVA)
     panic("walk");
 
@@ -118,6 +121,7 @@ walkaddr(pagetable_t pagetable, uint64 va)
 void
 kvmmap(uint64 va, uint64 pa, uint64 sz, int perm)
 {
+  //printf("function:kvmmap\n");
   if(mappages(kernel_pagetable, va, sz, pa, perm) != 0)
     panic("kvmmap");
 }
@@ -133,7 +137,8 @@ kvmpa(uint64 va)
   pte_t *pte;
   uint64 pa;
   
-  pte = walk(kernel_pagetable, va, 0);
+  //pte = walk(kernel_pagetable, va, 0);
+  pte = walk(myproc()->proc_kernelPagetable, va, 0);
   if(pte == 0)
     panic("kvmpa");
   if((*pte & PTE_V) == 0)
@@ -151,7 +156,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 {
   uint64 a, last;
   pte_t *pte;
-  printf("mappages:va:%p,size:%d\n",va,size);
+  //printf("mappages:va:%p,size:%d\n",va,size);
   a = PGROUNDDOWN(va);// mask low 12 bits which indicate offset
   last = PGROUNDDOWN(va + size - 1);
   for(;;){
@@ -215,7 +220,7 @@ void
 uvminit(pagetable_t pagetable, uchar *src, uint sz)
 {
   char *mem;
-
+printf("function:uvminit\n");
   if(sz >= PGSIZE)
     panic("inituvm: more than a page");
   mem = kalloc();
@@ -231,7 +236,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 {
   char *mem;
   uint64 a;
-
+//printf("function:uvmalloc\n");
   if(newsz < oldsz)
     return oldsz;
 
@@ -314,7 +319,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   uint64 pa, i;
   uint flags;
   char *mem;
-
+//printf("function:uvmcopy\n");
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
@@ -455,13 +460,15 @@ void freewalk_print(pagetable_t pagetable,int index)
   for(int i =0; i<512; i++)
   {
     pte_t pte = pagetable[i];
-    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0)
+    if(pte & PTE_V) //if pte_v valid then print info
     {
       uint64 child = PTE2PA(pte);
       printf("%s%d:pte %p pa %p\n",formtp[index_input],i,pte,child);
-      index_input ++;
-      freewalk_print((pagetable_t)child,index_input);
-      //pagetable[i] = 0;
+      if((pte & (PTE_R|PTE_W|PTE_X)) == 0)//if pte_x,pte_w,pte_r not valid then has child
+      {
+        index_input ++;
+        freewalk_print((pagetable_t)child,index_input);
+      }
     }
     index_input = index;
   }
@@ -471,4 +478,21 @@ void uvmfree_kernelpage(pagetable_t pagetable,uint64 sz)
   if(sz > 0)
     uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1);
   freewalk(pagetable);
+}
+void proc_freewalk(pagetable_t pagetable)
+{
+  for(int i=0;i< 512; i++)
+  {
+    pte_t pte = pagetable[i];
+    if(pte&PTE_V)
+    {
+      pagetable[i] = 0;
+      if ((pte & (PTE_R|PTE_W|PTE_X)) == 0)
+      {
+        uint64 child = PTE2PA(pte);
+        proc_freewalk((pagetable_t)child);
+      }
+    }
+  }
+  kfree((void*) pagetable);
 }
