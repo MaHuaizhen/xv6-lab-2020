@@ -74,7 +74,8 @@ exec(char *path, char **argv)
   uvmclear(pagetable, sz-2*PGSIZE);
   sp = sz;
   stackbase = sp - PGSIZE;
-
+  //kvmdealloc(p->proc_kernelPagetable,p->sz,0);
+  ukvmcopy(pagetable, p->proc_kernelPagetable, 0, sz);
   // Push argument strings, prepare rest of stack in ustack.
   for(argc = 0; argv[argc]; argc++) {
     if(argc >= MAXARG)

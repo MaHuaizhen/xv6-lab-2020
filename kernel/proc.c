@@ -23,7 +23,7 @@ extern char trampoline[]; // trampoline.S
 void KernelPageGenforProc(struct proc *p);
 void proc_freeKernelpagetable(uint64 sz,struct proc *p);
 extern pagetable_t kernel_pagetable;
-pagetable_t proc_allocPgtblforProc(void);
+// pagetable_t proc_allocPgtblforProc(void);
 extern char etext[];  // kernel.ld sets this to end of kernel code.
 void user_inithart(struct proc *p);
 void user_vmmap(pagetable_t pagetable,uint64 va, uint64 pa, uint64 sz, int perm);
@@ -121,7 +121,7 @@ found:
 
   // An empty user page table.
   
-  p->proc_kernelPagetable =  proc_allocPgtblforProc();
+  p->proc_kernelPagetable =  proc_allocPgtblforProc(p);
   if(p->proc_kernelPagetable == 0)
   {
     freeproc(p);
@@ -267,7 +267,7 @@ userinit(void)
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
-
+ukvmcopy(p->pagetable, p->proc_kernelPagetable, 0, p->sz);// from 0 start copy, and copy all the context.
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
   p->trapframe->sp = PGSIZE;  // user stack pointer
@@ -290,11 +290,15 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
+    if (PGROUNDUP(sz + n) >= PLIC)
+    {return -1;}
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+    ukvmcopy(p->pagetable, p->proc_kernelPagetable, sz - n, sz);
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+    ukvmcopy(p->pagetable,p->proc_kernelPagetable,p->sz, sz - n);
   }
   p->sz = sz;
   return 0;
@@ -322,7 +326,7 @@ fork(void)
   }
   //np->traceMask = p->traceMask;// copy trace mask
   np->sz = p->sz;
-
+ ukvmcopy(np->pagetable, np->proc_kernelPagetable, 0, np->sz);
   np->parent = p;
 
   // copy saved user registers.
@@ -786,7 +790,7 @@ void proc_freeKernelpagetable(uint64 sz,struct proc *p)
   //uvmfree(pagetable, sz);
 }
 
-pagetable_t proc_allocPgtblforProc()
+pagetable_t proc_allocPgtblforProc(struct proc* p)
 {
     pagetable_t proc_kernelPagetable;
     proc_kernelPagetable = (pagetable_t)kalloc();
@@ -803,7 +807,7 @@ pagetable_t proc_allocPgtblforProc()
     user_vmmap(proc_kernelPagetable,VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
 
     // CLINT
-    user_vmmap(proc_kernelPagetable,CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+    //user_vmmap(proc_kernelPagetable,CLINT, CLINT, 0x10000, PTE_R | PTE_W);
 
     // PLIC
     user_vmmap(proc_kernelPagetable,PLIC, PLIC, 0x400000, PTE_R | PTE_W);
@@ -817,6 +821,7 @@ pagetable_t proc_allocPgtblforProc()
     // map the trampoline for trap entry/exit to
     // the highest virtual address in the kernel.
     user_vmmap(proc_kernelPagetable,TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+    user_vmmap(proc_kernelPagetable, TRAPFRAME, (uint64)(p->trapframe), PGSIZE, PTE_R | PTE_W);
     return proc_kernelPagetable;
 }
 void user_vmmap(pagetable_t pagetable,uint64 va, uint64 pa, uint64 sz, int perm)

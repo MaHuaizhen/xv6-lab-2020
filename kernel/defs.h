@@ -28,7 +28,7 @@ void            consputc(int);
 
 // exec.c
 int             exec(char*, char**);
-
+// uint64 kvmdealloc(pagetable_t kpagetable,uint64 oldsz,uint64 newsz);
 // file.c
 struct file*    filealloc(void);
 void            fileclose(struct file*);
@@ -110,7 +110,7 @@ int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
 void            proc_freewalk(pagetable_t pagetable);
 void vmprint(pagetable_t pageTable);
-
+pagetable_t proc_allocPgtblforProc(struct proc* p);
 // swtch.S
 void            swtch(struct context*, struct context*);
 
@@ -181,7 +181,10 @@ uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
-
+void            ukvmcopy(pagetable_t pagetable, pagetable_t kpagetable, uint64 oldsz, uint64 newsz);
+int             copyin_new(pagetable_t, char*, uint64, uint64);
+int             copyinstr_new(pagetable_t, char*, uint64, uint64);
+void uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free);
 // plic.c
 void            plicinit(void);
 void            plicinithart(void);
