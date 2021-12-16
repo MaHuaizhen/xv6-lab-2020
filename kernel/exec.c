@@ -113,8 +113,8 @@ exec(char *path, char **argv)
   oldpagetable = p->pagetable;
   p->pagetable = pagetable;
   p->sz = sz;
-  p->trapframe->epc = elf.entry;  // initial program counter = main
-  p->trapframe->sp = sp; // initial stack pointer
+  p->trapframe->epc = elf.entry;  // initial program counter = main(user program's main,)
+  p->trapframe->sp = sp; // initial stack pointer  setup stack pointer of the program
   proc_freepagetable(oldpagetable, oldsz);
   if(p->pid == 1)
   {
