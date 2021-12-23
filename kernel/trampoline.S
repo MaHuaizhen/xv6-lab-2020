@@ -29,7 +29,7 @@ uservec:
         csrrw a0, sscratch, a0
 
         # save the user registers in TRAPFRAME
-        sd ra, 40(a0)
+        sd ra, 40(a0)# ra-->a0+40
         sd sp, 48(a0)
         sd gp, 56(a0)
         sd tp, 64(a0)
@@ -65,7 +65,7 @@ uservec:
         sd t0, 112(a0)
 
         # restore kernel stack pointer from p->trapframe->kernel_sp
-        ld sp, 8(a0)
+        ld sp, 8(a0) # sp<--a0+40
 
         # make tp hold the current hartid, from p->trapframe->kernel_hartid
         ld tp, 32(a0)

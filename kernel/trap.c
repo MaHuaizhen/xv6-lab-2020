@@ -13,7 +13,7 @@ extern char trampoline[], uservec[], userret[];
 
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
-
+void StoreUserReg();
 extern int devintr();
 
 void
@@ -78,8 +78,37 @@ usertrap(void)
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
-    yield();
+  {
+    if(p->alarm_intervel != 0)
+    {
+      p->passed_ticks ++;
+      if(p->passed_ticks >= p->alarm_intervel) 
+      {
+        //((void(*)()) p->handler)();
+        p->passed_ticks = 0;
+        if(p->handler_run_indic == 0)
+        {
+          //printf("epc:%p,handler:%p\n",p->trapframe->epc,p->handler);
+          StoreUserReg();
+          p->trapframe->epc = p->handler;//set return address alarm handler not execute the alarm handler directly,because it now at kernel
+        }
+        else
+        {
+          yield();
+        }
 
+      }
+      else
+      {
+        yield();
+      }
+    }
+    else
+    {
+      yield();
+    }
+  }
+  
   usertrapret();
 }
 
@@ -217,4 +246,67 @@ devintr()
     return 0;
   }
 }
-
+void StoreUserReg()
+{
+  /*store user reg before call alarm handler*/
+  struct proc *p = myproc();
+  p->pc_before_interrupt = p->trapframe->epc;
+  p->ra = p->trapframe->ra;
+  p->sp = p->trapframe->sp;
+  p->gp = p->trapframe->gp;
+  p->tp = p->trapframe->tp;
+  p->t0 = p->trapframe->t0;
+  p->t1 = p->trapframe->t1;
+  p->t2 = p->trapframe->t2;
+  p->s0 = p->trapframe->s0;
+  p->s1 = p->trapframe->s1;
+  p->a0 = p->trapframe->a0;
+  p->a1 = p->trapframe->a1;
+  p->a2 = p->trapframe->a2;
+  p->a3 = p->trapframe->a3;
+  p->a4 = p->trapframe->a4;
+  p->a5 = p->trapframe->a5;
+  p->a6 = p->trapframe->a6;
+  p->s7 = p->trapframe->s7;
+  p->s8 = p->trapframe->s8;
+  p->s9 = p->trapframe->s9;
+  p->s10 = p->trapframe->s10;
+  p->s11 = p->trapframe->s11;
+  p->t3 = p->trapframe->t3;
+  p->t4 = p->trapframe->t4;
+  p->t5 = p->trapframe->t5;
+  p->t6 = p->trapframe->t6;
+  p->handler_run_indic = 1;
+  //printf("p->sp:%d,p->pid:%d\n",p->sp,p->pid);
+}
+void RestoreUserReg()
+{
+    /*restore user reg after call alarm handler*/
+  struct proc *p = myproc();
+  p->trapframe->ra = p->ra ;
+  p->trapframe->sp = p->sp ;
+  p->trapframe->gp = p->gp ;
+  p->trapframe->tp = p->tp ;
+  p->trapframe->t0 = p->t0 ;
+  p->trapframe->t1 = p->t1 ;
+  p->trapframe->s0 = p->s0 ;
+  p->trapframe->s1 = p->s1 ;
+  p->trapframe->a0 = p->a0 ;
+  p->trapframe->a1 = p->a1 ;
+  p->trapframe->a2 = p->a2 ;
+  p->trapframe->a3 = p->a3 ;
+  p->trapframe->a4 = p->a4 ;
+  p->trapframe->a5 = p->a5 ;
+  p->trapframe->a6 = p->a6 ;
+  p->trapframe->s7 = p->s7 ;
+  p->trapframe->s8 = p->s8 ;
+  p->trapframe->s9 = p->s9 ;
+  p->trapframe->s10 = p->s10 ;
+  p->trapframe->s11 = p->s11 ;
+  p->trapframe->t3 = p->t3 ;
+  p->trapframe->t4 = p->t4 ;
+  p->trapframe->t5 = p->t5 ;
+  p->trapframe->t6 = p->t6 ;
+  p->handler_run_indic = 0;
+  //printf("p->trapframe->sp:%d,p->pid:%d\n",p->trapframe->sp,p->pid);
+}

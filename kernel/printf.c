@@ -16,7 +16,7 @@
 #include "proc.h"
 
 volatile int panicked = 0;
-
+void extractCallerInfo(uint64 cur_fp);
 // lock to avoid interleaving concurrent printf's.
 static struct {
   struct spinlock lock;
@@ -118,10 +118,12 @@ void
 panic(char *s)
 {
   pr.locking = 0;
+  backtrace();
   printf("panic: ");
   printf(s);
   printf("\n");
   panicked = 1; // freeze uart output from other CPUs
+
   for(;;)
     ;
 }
@@ -131,4 +133,38 @@ printfinit(void)
 {
   initlock(&pr.lock, "pr");
   pr.locking = 1;
+}
+void backtrace()
+{
+  //uint64 epc;
+  //uint64 kernel_sp;
+  uint64 s0;
+  //struct trapframe* framepointer;
+  printf("backtrace\n");
+  s0 = r_fp();
+  // printf("s0:%p\n",s0);
+  // printf("current stack frame top:%p\n",PGROUNDUP(s0));
+  // printf("current stack frame bottom:%p\n",PGROUNDDOWN(s0));
+  // uint64 caller_addr_0 = *(uint64*)(s0 - 8);
+  // printf("%p\n",caller_addr_0);// caller function.s addr
+  // uint64 prv_fp_0 = *(uint64*)(s0 - 16);// caller function's fp
+  // printf("prv fp:%p\n",prv_fp_0);
+  
+  // uint64 caller_addr_1 = *(uint64*)(prv_fp_0 - 8);
+  // printf("%p\n",caller_addr_1);// caller function.s addr
+  // uint64 prv_fp_1 = *(uint64*)(prv_fp_0 - 16);// caller function's fp
+  // printf("prv fp:%p\n",prv_fp_1);
+  extractCallerInfo(s0);
+
+}
+void extractCallerInfo(uint64 cur_fp)
+{
+  if(cur_fp < PGROUNDUP(cur_fp))
+  {
+    uint64 caller_addr = *(uint64*)(cur_fp - 8);
+    printf("%p\n",caller_addr);// caller function.s addr
+    uint64 prv_fp = *(uint64*)(cur_fp - 16);// caller function's fp
+    //printf("prv fp:%p\n",prv_fp);
+    extractCallerInfo(prv_fp);
+  }
 }

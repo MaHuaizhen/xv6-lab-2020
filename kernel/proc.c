@@ -106,7 +106,7 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
-
+  p->passed_ticks = 0;
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     release(&p->lock);
@@ -474,7 +474,7 @@ scheduler(void)
         p->state = RUNNING;
         c->proc = p;
         swtch(&c->context, &p->context);
-
+        //p->passed_ticks = 0;// reset passed_ticks
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;

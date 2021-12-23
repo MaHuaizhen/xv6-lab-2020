@@ -70,6 +70,7 @@ sys_sleep(void)
     sleep(&ticks, &tickslock);
   }
   release(&tickslock);
+  backtrace();
   return 0;
 }
 
@@ -94,4 +95,27 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+// static inline uint64 r_sscratch()
+// {
+//   uint64 x;
+//   asm volatile("mv %0, sscratch" : "=r" (x));
+//   return x;
+// }
+uint64 sys_sigalarm()
+{
+  struct proc *p = myproc();
+  p->alarm_intervel = p->trapframe->a0;
+  //asm volatile("sd %0, sscratch" : "=r" (p->alarm_intervel));
+  p->handler = p->trapframe->a1;
+  return 0;
+}
+uint64 sys_sigreturn()
+{
+  struct proc *p = myproc();
+  p->trapframe->epc = p->pc_before_interrupt;
+  /*memmove(p->alarm_trapframe, p->trapframe, 512)*/
+  RestoreUserReg();
+  
+  return 0;
 }
