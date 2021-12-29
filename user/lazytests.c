@@ -16,22 +16,25 @@ sparse_memory(char *s)
   char *i, *prev_end, *new_end;
   
   prev_end = sbrk(REGION_SZ);
+
   if (prev_end == (char*)0xffffffffffffffffL) {
     printf("sbrk() failed\n");
     exit(1);
   }
   new_end = prev_end + REGION_SZ;
-
+    
   for (i = prev_end + PGSIZE; i < new_end; i += 64 * PGSIZE)
+  {
+    //printf("lazy alloc 28:*(char **)i :%x\n",*(char **)i);
     *(char **)i = i;
-
+  }
   for (i = prev_end + PGSIZE; i < new_end; i += 64 * PGSIZE) {
     if (*(char **)i != i) {
       printf("failed to read value from memory\n");
       exit(1);
     }
   }
-
+  printf("lazy alloc end\n");
   exit(0);
 }
 
@@ -49,7 +52,9 @@ sparse_memory_unmap(char *s)
   new_end = prev_end + REGION_SZ;
 
   for (i = prev_end + PGSIZE; i < new_end; i += PGSIZE * PGSIZE)
-    *(char **)i = i;
+  {
+     *(char **)i = i;
+  } 
 
   for (i = prev_end + PGSIZE; i < new_end; i += PGSIZE * PGSIZE) {
     pid = fork();
@@ -125,7 +130,6 @@ main(int argc, char *argv[])
   if(argc > 1) {
     n = argv[1];
   }
-  
   struct test {
     void (*f)(char *);
     char *s;

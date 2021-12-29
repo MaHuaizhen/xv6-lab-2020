@@ -22,7 +22,7 @@ static struct {
   struct spinlock lock;
   int locking;
 } pr;
-
+void extractCallerInfo(uint64 cur_fp);
 static char digits[] = "0123456789abcdef";
 
 static void
@@ -132,3 +132,21 @@ printfinit(void)
   initlock(&pr.lock, "pr");
   pr.locking = 1;
 }
+void backtrace()
+{
+  uint64 s0;
+  printf("backtrace\n");
+  s0 = r_fp();
+  extractCallerInfo(s0);
+
+}
+void extractCallerInfo(uint64 cur_fp)
+{
+  if(cur_fp < PGROUNDUP(cur_fp))
+  {
+    uint64 caller_addr = *(uint64*)(cur_fp - 8);
+    printf("%p\n",caller_addr);// caller function.s addr
+    uint64 prv_fp = *(uint64*)(cur_fp - 16);// caller function's fp
+    extractCallerInfo(prv_fp);
+  }
+} 

@@ -267,7 +267,7 @@ fork(void)
     return -1;
   }
 
-  // Copy user memory from parent to child.
+  //Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
     release(&np->lock);
@@ -693,4 +693,30 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+int lazy_allocation(uint64 addr)
+{
+  struct proc *p;
+  p = myproc();
+  if(addr >= p->sz)
+  {
+    return -1;
+  }
+  if(addr < p->trapframe->sp)
+  {
+    return -2;
+  }
+  uint64 pa = PGROUNDDOWN(addr);
+  char* mem = kalloc();
+  //struct proc *p = myproc();
+  if (mem == 0) {
+    // printf("lazy_alloc: kalloc failed");
+    return -3;
+  }
+  memset(mem, 0, PGSIZE);
+  if(mappages(p->pagetable, pa, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
+    kfree(mem);
+    return -4;
+  }
+  return 0;
 }

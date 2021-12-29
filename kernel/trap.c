@@ -37,7 +37,6 @@ void
 usertrap(void)
 {
   int which_dev = 0;
-
   if((r_sstatus() & SSTATUS_SPP) != 0)
     panic("usertrap: not from user mode");
 
@@ -52,7 +51,6 @@ usertrap(void)
   
   if(r_scause() == 8){
     // system call
-
     if(p->killed)
       exit(-1);
 
@@ -67,8 +65,71 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+
+  } 
+  else if((r_scause() == 13) || (r_scause() == 15))
+  {
+    uint64 vraddr_pgfal = r_stval();
+    //printf("page fault\n");
+    if(vraddr_pgfal >= TRAPFRAME)
+    {
+      p->killed = 1;
+    }
+    else
+    {
+      if (lazy_allocation(vraddr_pgfal) < 0)
+      {
+        p->killed = 1;
+      }
+    }
+
+    // if(r_stval() < p->sz)
+    // {
+    //   for(uint64 a = PGROUNDDOWN(vraddr_pgfal); a < vraddr_pgfal; a += PGSIZE){
+    //     char *mem;
+    //     mem = kalloc();
+    //     if(mem == 0){
+    //       uvmdealloc(p->pagetable, a, vraddr_pgfal);
+    //           printf("usertrap(): unexpected scause:kalloc fail %p pid=%d\n", r_scause(), p->pid);
+    //           printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+    //           p->killed = 1;
+    //     }
+    //     memset(mem, 0, PGSIZE);
+    //     if(mappages(p->pagetable, a, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
+    //           printf("usertrap(): unexpected scause:mappage fail %p pid=%d\n", r_scause(), p->pid);
+    //           printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+    //           p->killed = 1;
+    //     }
+    //   }
+    //   p->trapframe->epc = r_sepc();
+    //   usertrapret();
+    // }
+    // else
+    // {
+    //         printf("usertrap(): unexpected scause:r_stval over than p->sz %p pid=%d\n", r_scause(), p->pid);
+    //         printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+    //         p->killed = 1;
+    // }
+
+  }
+  // else if(r_scause() == 12)
+  // {
+  //   //printf("page fault\n");
+  //   struct proc* pp = p->parent;
+  //   if(uvmcopy(pp->pagetable, p->pagetable, p->sz) < 0)
+  //   {
+  //       printf("usertrap(): unexpected scause:um copy fault %p pid=%d\n", r_scause(), p->pid);
+  //       printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+  //       p->killed = 1;
+  //   }
+  //   else
+  //   {
+  //     p->trapframe->epc = r_sepc();
+  //     usertrapret();
+  //   }
+  // }
+  else {
+    printf("usertrap(): unexpected scause  %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
   }
