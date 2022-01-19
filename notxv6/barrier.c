@@ -30,6 +30,25 @@ barrier()
   // Block until all threads have called barrier() and
   // then increment bstate.round.
   //
+  pthread_mutex_lock(&bstate.barrier_mutex);
+  bstate.nthread ++;
+  printf("before loop,nthread:%d,nthread:%d\n",bstate.nthread,nthread);
+  if(bstate.nthread < nthread)
+  {
+    printf("enter sleep\n");
+    pthread_cond_wait(&bstate.barrier_cond,&bstate.barrier_mutex);//wait时,锁是释放的,再次唤醒时获取锁
+    pthread_mutex_unlock(&bstate.barrier_mutex);
+    printf("wakeup\n");
+  }
+  else
+  {
+    printf("exit sleep\n");
+    bstate.round ++;
+    bstate.nthread = 0;
+    printf("bstate.round:%d\n",bstate.round);
+    pthread_cond_broadcast(&bstate.barrier_cond);  
+  }
+pthread_mutex_unlock(&bstate.barrier_mutex);
   
 }
 
@@ -41,7 +60,10 @@ thread(void *xa)
   int i;
 
   for (i = 0; i < 20000; i++) {
+    pthread_mutex_lock(&bstate.barrier_mutex);
     int t = bstate.round;
+    pthread_mutex_unlock(&bstate.barrier_mutex);
+    printf("t:%d,i:%d\n",t,i);
     assert (i == t);
     barrier();
     usleep(random() % 100);
