@@ -13,6 +13,7 @@ statistics(void *buf, int sz)
       fprintf(2, "stats: open failed\n");
       exit(1);
   }
+  //读出所有fd文件中的内容放在buf中
   for (i = 0; i < sz; ) {
     if ((n = read(fd, buf+i, sz-i)) < 0) {
       break;

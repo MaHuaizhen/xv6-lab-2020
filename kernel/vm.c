@@ -22,6 +22,10 @@ void
 kvminit()
 {
   kernel_pagetable = (pagetable_t) kalloc();
+  if(kernel_pagetable == 0)
+  {
+    printf("kvminit kalloc failed\n");
+  }
   memset(kernel_pagetable, 0, PGSIZE);
 
   // uart registers
@@ -77,7 +81,10 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
       pagetable = (pagetable_t)PTE2PA(*pte);
     } else {
       if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
+      {
+        //printf("walk kalloc failed\n");
         return 0;
+      }
       memset(pagetable, 0, PGSIZE);
       *pte = PA2PTE(pagetable) | PTE_V;
     }
@@ -179,7 +186,10 @@ uvmcreate()
   pagetable_t pagetable;
   pagetable = (pagetable_t) kalloc();
   if(pagetable == 0)
+  {  
+    printf("uvmcreate kalloc failed\n");
     return 0;
+  }
   memset(pagetable, 0, PGSIZE);
   return pagetable;
 }
@@ -195,6 +205,10 @@ uvminit(pagetable_t pagetable, uchar *src, uint sz)
   if(sz >= PGSIZE)
     panic("inituvm: more than a page");
   mem = kalloc();
+  if(mem == 0)
+  {
+    printf("uvminit kalloc failed\n");
+  }
   memset(mem, 0, PGSIZE);
   mappages(pagetable, 0, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_X|PTE_U);
   memmove(mem, src, sz);
@@ -215,6 +229,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
   for(a = oldsz; a < newsz; a += PGSIZE){
     mem = kalloc();
     if(mem == 0){
+      //printf("uvmalloc kalloc failed\n");
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
@@ -298,7 +313,11 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
+    {
+      printf("uvmcopy kalloc failed\n");
       goto err;
+    }
+      
     memmove(mem, (char*)pa, PGSIZE);
     if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
       kfree(mem);

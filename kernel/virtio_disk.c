@@ -16,7 +16,8 @@
 #include "fs.h"
 #include "buf.h"
 #include "virtio.h"
-
+#include "proc.h"
+extern int T_noff;
 // the address of virtio mmio register r.
 #define R(r) ((volatile uint32 *)(VIRTIO0 + (r)))
 
@@ -204,7 +205,7 @@ void
 virtio_disk_rw(struct buf *b, int write)
 {
   uint64 sector = b->blockno * (BSIZE / 512);
-
+  T_noff = mycpu()->noff;
   acquire(&disk.vdisk_lock);
 
   // the spec's Section 5.2 says that legacy block operations use

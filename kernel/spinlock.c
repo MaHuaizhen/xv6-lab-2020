@@ -138,11 +138,12 @@ void
 push_off(void)
 {
   int old = intr_get();
-
+//printf("mycpu()->noff:%d\n",mycpu()->noff);
   intr_off();
   if(mycpu()->noff == 0)
     mycpu()->intena = old;
   mycpu()->noff += 1;
+  
 }
 
 void
@@ -154,8 +155,10 @@ pop_off(void)
   if(c->noff < 1)
     panic("pop_off");
   c->noff -= 1;
+  
   if(c->noff == 0 && c->intena)
     intr_on();
+  //printf("mycpu()->noff:%d\n",mycpu()->noff);
 }
 
 #ifdef LAB_LOCK

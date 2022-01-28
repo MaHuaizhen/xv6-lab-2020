@@ -436,7 +436,10 @@ sys_exec(void)
     }
     argv[i] = kalloc();
     if(argv[i] == 0)
+    {  
+      printf("sys_exec kalloc failed\n");
       goto bad;
+    }
     if(fetchstr(uarg, argv[i], PGSIZE) < 0)
       goto bad;
   }

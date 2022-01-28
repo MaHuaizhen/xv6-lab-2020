@@ -8,5 +8,11 @@ struct buf {
   struct buf *prev; // LRU cache list
   struct buf *next;
   uchar data[BSIZE];
+  uint64 time_stamp;
 };
 
+typedef struct {
+  struct spinlock lock;
+  struct buf buf[10];
+  
+}bucket;

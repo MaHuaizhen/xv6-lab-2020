@@ -5,7 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
-
+extern int T_noff;
 struct cpu cpus[NCPU];
 
 struct proc proc[NPROC];
@@ -66,10 +66,12 @@ mycpu(void) {
 // Return the current struct proc *, or zero if none.
 struct proc*
 myproc(void) {
+
   push_off();
   struct cpu *c = mycpu();
   struct proc *p = c->proc;
   pop_off();
+  T_noff = c->noff;
   return p;
 }
 
@@ -109,6 +111,7 @@ found:
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
+    printf("allocproc kalloc failed\n");
     release(&p->lock);
     return 0;
   }
@@ -506,6 +509,7 @@ sched(void)
 
   if(!holding(&p->lock))
     panic("sched p->lock");
+ // printf("mycpu()->noff:%d\n",mycpu()->noff);
   if(mycpu()->noff != 1)
     panic("sched locks");
   if(p->state == RUNNING)
@@ -546,7 +550,7 @@ forkret(void)
     first = 0;
     fsinit(ROOTDEV);
   }
-
+  T_noff = mycpu()->noff;
   usertrapret();
 }
 

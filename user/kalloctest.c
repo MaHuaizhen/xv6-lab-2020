@@ -30,8 +30,8 @@ int ntas(int print)
   if (statistics(buf, SZ) <= 0) {
     fprintf(2, "ntas: no stats\n");
   }
-  c = strchr(buf, '=');
-  n = atoi(c+2);
+  c = strchr(buf, '=');//在buf中找到"="字符,返回指针位置
+  n = atoi(c+2);//转换成int类型
   if(print)
     printf("%s", buf);
   return n;
@@ -42,19 +42,24 @@ void test1(void)
   void *a, *a1;
   int n, m;
   printf("start test1\n");  
-  m = ntas(0);
-  for(int i = 0; i < NCHILD; i++){
+  m = ntas(0);//找到statistics 中=位置的指针
+  for(int i = 0; i < NCHILD; i++)
+  {
     int pid = fork();
-    if(pid < 0){
+    if(pid < 0)
+    {
       printf("fork failed");
       exit(-1);
     }
-    if(pid == 0){
-      for(i = 0; i < N; i++) {
+    if(pid == 0)
+    {
+      for(i = 0; i < N; i++) 
+      {
         a = sbrk(4096);
         *(int *)(a+4) = 1;
         a1 = sbrk(-4096);
-        if (a1 != a + 4096) {
+        if (a1 != a + 4096) 
+        {
           printf("wrong sbrk\n");
           exit(-1);
         }
@@ -85,6 +90,7 @@ countfree()
 
   while(1){
     uint64 a = (uint64) sbrk(4096);
+    //printf("call sbrk,a=%p\n",a);
     if(a == 0xffffffffffffffff){
       break;
     }
@@ -100,7 +106,7 @@ void test2() {
   int free0 = countfree();
   int free1;
   int n = (PHYSTOP-KERNBASE)/PGSIZE;
-  printf("start test2\n");  
+  printf("start test2:n:%d\n",n);  
   printf("total free number of pages: %d (out of %d)\n", free0, n);
   if(n - free0 > 1000) {
     printf("test2 FAILED: cannot allocate enough memory");
