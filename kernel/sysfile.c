@@ -15,7 +15,8 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
-
+#include "buf.h"
+struct inode* findFileforSymboLink(char*path,struct inode *ip);
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int
@@ -126,7 +127,7 @@ sys_link(void)
     return -1;
 
   begin_op();
-  if((ip = namei(old)) == 0){
+  if((ip = namei(old)) == 0){//对于旧的路径,找到其inode,链接数加1,并更新ip
     end_op();
     return -1;
   }
@@ -137,20 +138,20 @@ sys_link(void)
     end_op();
     return -1;
   }
-
+  
   ip->nlink++;
   iupdate(ip);
   iunlock(ip);
 
-  if((dp = nameiparent(new, name)) == 0)
+  if((dp = nameiparent(new, name)) == 0)//找到对应的inode并提取父目录
     goto bad;
   ilock(dp);
-  if(dp->dev != ip->dev || dirlink(dp, name, ip->inum) < 0){
+  if(dp->dev != ip->dev || dirlink(dp, name, ip->inum) < 0){//write new directory entry to directory dp
     iunlockput(dp);
     goto bad;
   }
   iunlockput(dp);
-  iput(ip);
+  iput(ip);//自减inode的reference
 
   end_op();
 
@@ -254,6 +255,9 @@ create(char *path, short type, short major, short minor)
     ilock(ip);
     if(type == T_FILE && (ip->type == T_FILE || ip->type == T_DEVICE))
       return ip;
+    /*for creating symbolic link*/
+    if(type == T_SYMLINK)
+      return ip;
     iunlockput(ip);
     return 0;
   }
@@ -291,38 +295,64 @@ sys_open(void)
   struct file *f;
   struct inode *ip;
   int n;
-
   if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
     return -1;
-
+  //printf("open path:%s\n",path);
   begin_op();
 
-  if(omode & O_CREATE){
+  if(omode & O_CREATE)
+  {
     ip = create(path, T_FILE, 0, 0);
     if(ip == 0){
       end_op();
       return -1;
     }
-  } else {
-    if((ip = namei(path)) == 0){
+  } 
+  else
+  {
+    if((ip = namei(path)) == 0)
+    {
       end_op();
       return -1;
     }
     ilock(ip);
-    if(ip->type == T_DIR && omode != O_RDONLY){
+    if(ip->type == T_DIR && omode != O_RDONLY)
+    {
+      printf("sys_open:ip->type:%d,omode:%d\n",ip->type,omode);
       iunlockput(ip);
       end_op();
       return -1;
     }
+    /*处理给定的路径是symbolic link的情况*/
+    if(ip->type == T_SYMLINK)
+    {
+      if((omode & O_NOFOLLOW) == 0)
+      {
+        /*open file not follow*/
+        ip = findFileforSymboLink(path,ip);
+        if(ip == 0)
+        {
+          end_op();
+          return -1;
+        }
+      }
+      else
+      {
+        /*open the linked file*/
+        
+         //printf("open file not follow\n");
+      }
+    }
   }
 
-  if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
+  if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV))
+  {
     iunlockput(ip);
     end_op();
     return -1;
   }
-
-  if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
+  if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0)
+  {
     if(f)
       fileclose(f);
     iunlockput(ip);
@@ -330,10 +360,13 @@ sys_open(void)
     return -1;
   }
 
-  if(ip->type == T_DEVICE){
+  if(ip->type == T_DEVICE) 
+  {
     f->type = FD_DEVICE;
     f->major = ip->major;
-  } else {
+  }
+  else 
+  {
     f->type = FD_INODE;
     f->off = 0;
   }
@@ -341,7 +374,8 @@ sys_open(void)
   f->readable = !(omode & O_WRONLY);
   f->writable = (omode & O_WRONLY) || (omode & O_RDWR);
 
-  if((omode & O_TRUNC) && ip->type == T_FILE){
+  if((omode & O_TRUNC) && ip->type == T_FILE)
+  {
     itrunc(ip);
   }
 
@@ -483,4 +517,66 @@ sys_pipe(void)
     return -1;
   }
   return 0;
+}
+uint64 sys_symlink(void)
+{
+  //printf("called sys_symlink\n");
+ char old[MAXPATH];char new[MAXPATH];
+  struct inode *dp;
+  /*获取symbolic的两个参数*/
+  if((argstr(0,old,MAXPATH)<0)||(argstr(1,new,MAXPATH)<0))
+  {
+    printf("symlink get para from user fail\n");
+    return -1;
+  }
+  /*解释old 的路径*/
+  begin_op();
+  dp = create(new,T_SYMLINK,0,0);
+  if(dp == 0){
+    end_op();
+    return -1;
+    }
+  if(writei(dp,0,(uint64)old,0,MAXPATH) != MAXPATH)
+  {
+    printf("wirte inode ok\n");
+  }
+  iunlockput(dp);
+  end_op();
+  return 0;
+}
+struct inode* findFileforSymboLink(char*path,struct inode *ip)
+{
+  char readpath[MAXPATH];
+  uint8 symbolic_recur = 0;
+
+  //printf("findFileforSymboLink:%s\n",path);
+
+  while((symbolic_recur <10) &&(ip->type == T_SYMLINK))
+  {
+    if(readi(ip,0,(uint64)readpath,0,sizeof(readpath))!= sizeof(readpath))
+    {
+      panic("findFileforSymboLink");
+    }
+    if(strncmp(path,readpath,sizeof(readpath)) == 0)
+    {
+      printf("path recurisive:path:%s,ip->tarPath:%s\n",path,readpath);
+      return 0;
+    }
+    strncpy(path,readpath,sizeof(readpath));
+    iunlockput(ip);
+    ip = namei(path);
+    if(ip == 0)
+    {
+      printf("symlink: parse old failed\n");
+      return 0;
+    }
+    ilock(ip);
+    symbolic_recur ++;
+  }
+  if(symbolic_recur >= 10)
+  {
+    printf("symlink: recurisvely depth over than 10\n");
+    return 0;
+  }
+  return ip;
 }

@@ -233,7 +233,7 @@ userinit(void)
   p->trapframe->sp = PGSIZE;  // user stack pointer
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
-  p->cwd = namei("/");
+  p->cwd = namei("/");//设置root的inode为p->cwd
 
   p->state = RUNNABLE;
 

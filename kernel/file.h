@@ -26,7 +26,8 @@ struct inode {
   short minor;
   short nlink;
   uint size;
-  uint addrs[NDIRECT+1];
+  uint addrs[NDIRECT+2];
+  //char tarPath[128];   //used to store target path for symbolic link
 };
 
 // map major device number to device functions.
